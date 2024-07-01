@@ -1,0 +1,434 @@
+# Desafio CIVITAS - EMD
+
+Rafael Coletto Cardoso
+
+## Análise Exploratória e Inconsistências
+
+Nessa primeira parte realizei algumas análises básicas no banco, a procura de possíveis erros de preenchimento ou não preenchimento e inconsistências nos dados.
+
+### Número de Observações e Campos Nulos
+
+```sql
+SELECT COUNT(*) AS total_linhas
+FROM `rj-cetrio.desafio.readings_2024_06`;
+```
+
+```sql
+SELECT
+  COUNTIF(camera_numero IS NULL) AS camera_numero_nulos,
+  COUNTIF(datahora IS NULL) AS datahora_nulos,
+  COUNTIF(datahora_captura IS NULL) AS datahora_captura_nulos,
+  COUNTIF(empresa IS NULL) AS empresa_nulos,
+  COUNTIF(placa IS NULL) AS placa_nulos,
+  COUNTIF(tipoveiculo IS NULL) AS tipoveiculo_nulos,
+  COUNTIF(camera_latitude IS NULL) AS camera_latitude_nulos,
+  COUNTIF(camera_longitude IS NULL) AS camera_longitude_nulos,
+  COUNTIF(velocidade IS NULL) AS velocidade_nulos
+FROM `rj-cetrio.desafio.readings_2024_06`;
+```
+
+A tabela possui 36.358.536 observações. 
+A coluna `datahora_captura` apresenta 1.816.325 valores nulos, aparentando um problema entre o campo `datahora` e o recebimento de dados em `datahora_captura`.
+
+#### Dados de Velocidade
+
+A seguir um resumo dos dados sobre o campo `velocidade`:
+
+```sql
+SELECT 
+  MIN(velocidade) AS velocidade_minima,
+  MAX(velocidade) AS velocidade_maxima,
+  AVG(velocidade) AS velocidade_media,
+  STDDEV(velocidade) AS desvio_padrao_velocidade
+FROM `rj-cetrio.desafio.readings_2024_06`;
+```
+
+|velocidade_minima|velocidade_maxima|velocidade_media|desvio_padrao_velocidade|
+|---|---|---|---|
+|0|255|37,1072868|15,12548671|
+
+Os valores mínimo (0) e máximo (255) podem ser inconsistentes, merecendo investigação.
+
+#### Quantidade de Empresas e Tipos de Veículo
+
+A seguir uma breve análise das variáveis `empresa` e `tipoveiculo`
+
+```sql
+SELECT empresa, COUNT(*) AS contagem
+FROM `rj-cetrio.desafio.readings_2024_06`
+GROUP BY empresa;
+```
+
+```sql
+SELECT tipoveiculo, COUNT(*) AS contagem
+FROM `rj-cetrio.desafio.readings_2024_06`
+GROUP BY tipoveiculo;
+```
+
+Existem 3 empresas distintas e 4 tipos de veículos:
+
+|empresa (codificada)|contagem|
+|---|---|
+|HiVFr51Ixg==|24474488|
+|CJGWe0E/pA==|8717449|
+|LOAagMfz0A==|3166599|
+
+|tipoveiculo (codificada)|contagem|
+|---|---|
+|4uACn8DT5Q==|34386894|
+|uIZSERCZ7Q==|331696|
+|AxzAA36BbQ==|482850|
+|emN29HypFQ==|1157096|
+
+#### Quantidade de Câmeras e Placas
+
+A seguir uma primeira apresentação de dados sobre as câmeras e placas:
+
+```sql
+SELECT camera_numero, COUNT(*) AS contagem
+FROM `rj-cetrio.desafio.readings_2024_06`
+GROUP BY camera_numero;
+```
+
+```sql
+SELECT placa, COUNT(*) AS contagem
+FROM `rj-cetrio.desafio.readings_2024_06`
+GROUP BY placa;
+```
+
+*   **Câmeras:** 1421 câmeras, com variação de 1 a 242.301 leituras por câmera.
+*   **Placas:** 7.986.610 placas, com variação de 1 a 8.371 leituras por placa.
+
+As variações extremas sugerem a necessidade de investigar as câmeras e placas com maior número de leituras.
+
+#### Latitude e Longitude das Câmeras
+
+```sql
+SELECT DISTINCT camera_numero, camera_latitude, camera_longitude
+FROM `rj-cetrio.desafio.readings_2024_06`
+WHERE camera_latitude >= 0 OR camera_longitude >= 0;
+```
+
+Por se tratar da cidade do Rio de Janeiro, todas as câmeras deviam possuir latitude/longitude negativas.    O retorno dessa consulta mostra que temos 6 cameras com aparente problema de preenchimento. Outras cameras possuem campos de latitude e longitude que possuem problemas menos óbvios de latitude/longitude, uma por exemplo cai no oceano. Para análises mais elaboradas utilizei ajuda de mapa de bairros do Data.Rio.
+
+|camera_numero|camera_latitude|camera_longitude|
+|---|---|---|
+|CKF78vkvCg==|0|0|
+|9rbv9sPFeA==|0|0|
+|z83TXjlzJQ==|-23,000612|43,334218|
+|PUZ5xWDglQ==|0|0|
+|ac07I0YGkA==|0|0|
+|1kXATco4mw==|0|0|
+
+#### Data e Hora
+
+Analisando os dados entre os campos `datahora` e o recebimento de dados em `datahora_captura`
+
+```sql
+SELECT MIN(datahora) AS datahora_minima, MAX(datahora) AS datahora_maxima
+FROM `rj-cetrio.desafio.readings_2024_06`;
+```
+
+```sql
+SELECT MIN(datahora_captura) AS datahora_minima, MAX(datahora_captura) AS datahora_maxima
+FROM `rj-cetrio.desafio.readings_2024_06`;
+```
+
+*   `datahora`: De 06/06/2024 00:00:00 a 13/06/2024 14:31:56.
+*   `datahora_captura`: De 06/06/2024 15:17:49 a 13/06/2024 14:25:34.
+
+
+
+
+##### Análise da Diferença de Tempo por Empresa
+
+```sql
+SELECT 
+  AVG(SAFE_CAST(TIMESTAMP_DIFF(SAFE_CAST(datahora_captura AS TIMESTAMP), SAFE_CAST(datahora AS TIMESTAMP), SECOND) AS INT64) / 60) AS media_diferenca_minutos,
+  MIN(SAFE_CAST(TIMESTAMP_DIFF(SAFE_CAST(datahora_captura AS TIMESTAMP), SAFE_CAST(datahora AS TIMESTAMP), SECOND) AS INT64) / 60) AS min_diferenca_minutos,
+  MAX(SAFE_CAST(TIMESTAMP_DIFF(SAFE_CAST(datahora_captura AS TIMESTAMP), SAFE_CAST(datahora AS TIMESTAMP), SECOND) AS INT64) / 60) AS max_diferenca_minutos,
+  STDDEV(SAFE_CAST(TIMESTAMP_DIFF(SAFE_CAST(datahora_captura AS TIMESTAMP), SAFE_CAST(datahora AS TIMESTAMP), SECOND) AS INT64) / 60) AS desvio_padrao_diferenca_minutos
+FROM `rj-cetrio.desafio.readings_2024_06` WHERE datahora_captura IS NOT NULL;
+```
+
+
+
+A análise da diferença de tempo entre `datahora` e `datahora_captura` revela:
+
+|media_diferenca_minutos|min_diferenca_minutos|max_diferenca_minutos|desvio_padrao_diferenca_minutos|
+|---|---|---|---|
+|"29,24298403"|"8,8"|"5.818,05"|"192,7794203"|
+
+Evidente que não deve ter variação negativa, e essa variação máxima está com 4 dias de atraso. Muito distante da média de aproximadamente 30 min. Resolvi então abrir por empresa esses dados:
+
+
+
+```sql
+SELECT empresa, 
+  AVG(SAFE_CAST(TIMESTAMP_DIFF(SAFE_CAST(datahora_captura AS TIMESTAMP), SAFE_CAST(datahora AS TIMESTAMP), SECOND) AS INT64) / 60) AS media_diferenca_minutos,
+  MIN(SAFE_CAST(TIMESTAMP_DIFF(SAFE_CAST(datahora_captura AS TIMESTAMP), SAFE_CAST(datahora AS TIMESTAMP), SECOND) AS INT64) / 60) AS min_diferenca_minutos,
+  MAX(SAFE_CAST(TIMESTAMP_DIFF(SAFE_CAST(datahora_captura AS TIMESTAMP), SAFE_CAST(datahora AS TIMESTAMP), SECOND) AS INT64) / 60) AS max_diferenca_minutos,
+  STDDEV(SAFE_CAST(TIMESTAMP_DIFF(SAFE_CAST(datahora_captura AS TIMESTAMP), SAFE_CAST(datahora AS TIMESTAMP), SECOND) AS INT64) / 60) AS desvio_padrao_diferenca_minutos
+FROM `rj-cetrio.desafio.readings_2024_06`
+WHERE datahora_captura IS NOT NULL
+GROUP BY empresa;
+```
+
+|empresa|media_diferenca_minutos|min_diferenca_minutos|max_diferenca_minutos|desvio_padrao_diferenca_minutos|
+|---|---|---|---|---|
+|LOAagMfz0A==|"133,4650491"|"0,1"|"5.818,05"|"504,7538051"|
+|CJGWe0E/pA==|"68,44678181"|"8,8"|"4.217,30"|"228,4574125"|
+|HiVFr51Ixg==|"0,5787113485"|"0,9166666667"|"21,25"|"0,3549229622"|
+
+Aparentemente temos problemas nas 3 empresas. Resolvi aprofundar a analise por empresa, criando um intervalo de confiança (1 desvio padrão acima e abaixo, e criei categorias (valores negativos, abaixo da média, dentro da média, acima da média e nulos). Existe algum problema entre os campos  `datahora` e `datahora_captura` porém seria necessário mais informações de como ocorre esse processo para conclusões mais precisas. Existe um possível problema em se utilizar o campo `datahora_captura` , para uma maior integridade das análises seguintes utilizarei apenas o campo `datahora`. Segue os resultados:
+
+```sql
+WITH diferencas AS (
+  SELECT
+    empresa,
+    SAFE_CAST(TIMESTAMP_DIFF(SAFE_CAST(datahora_captura AS TIMESTAMP), SAFE_CAST(datahora AS TIMESTAMP), SECOND) / 60 AS INT64) AS diferenca_minutos,
+    IF(datahora_captura IS NULL, 1, 0) AS is_null 
+  FROM
+    `rj-cetrio.desafio.readings_2024_06`
+),
+estatisticas AS (
+  SELECT
+    empresa,
+    AVG(diferenca_minutos) AS media,
+    STDDEV(diferenca_minutos) AS desvio_padrao
+  FROM
+    diferencas
+  WHERE diferenca_minutos IS NOT NULL 
+  GROUP BY
+    empresa
+)
+SELECT
+  empresa,
+  (SELECT COUNT(*) FROM diferencas d WHERE d.empresa = e.empresa AND d.diferenca_minutos < 0) AS negativos,
+  (SELECT COUNT(*) FROM diferencas d WHERE d.empresa = e.empresa AND d.diferenca_minutos < e.media - e.desvio_padrao) AS abaixo_da_media,
+  (SELECT COUNT(*) FROM diferencas d WHERE d.empresa = e.empresa AND d.diferenca_minutos BETWEEN e.media - e.desvio_padrao AND e.media + e.desvio_padrao) AS dentro_do_intervalo,
+  (SELECT COUNT(*) FROM diferencas d WHERE d.empresa = e.empresa AND d.diferenca_minutos > e.media + e.desvio_padrao) AS acima_da_media,
+  (SELECT COUNT(*) FROM diferencas d WHERE d.empresa = e.empresa AND d.is_null = 1) AS nulos 
+FROM
+  estatisticas e;
+```
+
+|empresa|negativos|abaixo_da_media|dentro_do_intervalo|acima_da_media|nulos|
+|---|---|---|---|---|---|
+|HiVFr51Ixg==|15|9535674|13260901|29452|1648461|
+|CJGWe0E/pA==|400439|0|8062433|655016|0|
+|LOAagMfz0A==|0|0|2838237|160498|167864|
+
+## Possíveis casos de placas clonadas
+
+Nessa seção faço uma abordagem para busca de casos em que possivelmente existe veículos diferentes rodando com a mesma placa. 
+
+### Placa X Tipo de veículo
+
+Realizei uma consulta para ver se uma mesma placa aparecia em mais de um tipo de veículo diferente. O retorno foi de 441.652 linhas, levando em conta o total de placas no banco ser de 7.986.610, o total de placas que aparecem em mais de um tipo de carro é de 5%. Inclusive, algumas placas possuem registro nos 4 tipos de veículos cadastrados no banco, sendo que 62.336 placas estão registradas em ao menos 3 tipos de veículos e 8.268 estão registradas nos 4 tipos de veículos. 
+
+**Query utilizada:**
+
+```sql
+WITH placas_duplicadas AS (
+  SELECT placa
+  FROM `rj-cetrio.desafio.readings_2024_06`
+  GROUP BY placa
+  HAVING COUNT(DISTINCT tipoveiculo) > 1
+),
+tipos_veiculos_por_placa AS (
+  SELECT placa, ARRAY_AGG(DISTINCT tipoveiculo) AS tipos_veiculos
+  FROM `rj-cetrio.desafio.readings_2024_06`
+  WHERE placa IN (SELECT placa FROM placas_duplicadas)
+  GROUP BY placa
+)
+SELECT 
+  placa,
+  tipos_veiculos[OFFSET(0)] AS tipoveiculo1,
+  tipos_veiculos[SAFE_OFFSET(1)] AS tipoveiculo2,
+  tipos_veiculos[SAFE_OFFSET(2)] AS tipoveiculo3,
+  tipos_veiculos[SAFE_OFFSET(3)] AS tipoveiculo4
+FROM tipos_veiculos_por_placa;
+```
+
+### Casos Suspeitos na Mesma Câmera e Data/Hora
+
+A consulta abaixo identifica casos suspeitos em que a mesma placa, tipo de veículo e data/hora aparecem em mais de uma ocorrência na mesma câmera, com velocidades diferentes.
+
+```sql
+WITH placas_duplicadas AS (
+  SELECT
+    placa,
+    tipoveiculo,
+    datahora,
+    camera_numero
+  FROM
+    `rj-cetrio.desafio.readings_2024_06`
+  WHERE velocidade > 0
+  GROUP BY
+    placa,
+    tipoveiculo,
+    datahora,
+    camera_numero
+  HAVING
+    COUNT(*) > 1
+)
+SELECT
+  d1.placa,
+  d1.tipoveiculo,
+  d1.datahora,
+  d1.camera_numero,
+  d1.velocidade AS velocidade1,
+  d2.velocidade AS velocidade2
+FROM
+  `rj-cetrio.desafio.readings_2024_06` d1
+JOIN
+  placas_duplicadas pd ON d1.placa = pd.placa AND d1.tipoveiculo = pd.tipoveiculo AND d1.datahora = pd.datahora AND d1.camera_numero = pd.camera_numero
+JOIN
+  `rj-cetrio.desafio.readings_2024_06` d2 ON d1.placa = d2.placa AND d1.tipoveiculo = d2.tipoveiculo AND d1.datahora = d2.datahora AND d1.camera_numero = d2.camera_numero AND d1.velocidade != d2.velocidade;
+```
+
+O retorno dessa consulta é suspeito porque se trata da mesma placa, tipo de veículo e data/hora com mais de uma ocorrência na mesma câmera. A velocidade foi filtrada para ser maior que 0, pois um carro parado poderia ser uma justificativa. Também foi filtrado o tipo de veículo igual em ambas as ocorrências, porque os casos onde o tipo de veículo é diferente já levantaram uma hipótese de placa clonada com maior probabilidade. Essa query retornou 109.108 linhas.
+
+##### 10 Câmeras com Mais Casos Suspeitos
+
+A consulta abaixo exibe as 10 câmeras onde mais aconteceu esse tipo de caso
+
+```sql
+WITH placas_duplicadas AS (
+  SELECT
+    placa,
+    tipoveiculo,
+    datahora,
+    camera_numero
+  FROM
+    `rj-cetrio.desafio.readings_2024_06`
+  WHERE velocidade > 0
+  GROUP BY
+    placa,
+    tipoveiculo,
+    datahora,
+    camera_numero
+  HAVING
+    COUNT(*) > 1 
+),
+duplicacoes_por_camera AS (
+  SELECT
+    camera_numero,
+    COUNT(*) AS num_duplicacoes
+  FROM
+    placas_duplicadas
+  GROUP BY
+    camera_numero
+)
+SELECT *
+FROM duplicacoes_por_camera
+ORDER BY num_duplicacoes DESC
+LIMIT 10;
+```
+
+|camera_numero|num_duplicacoes|
+|---|---|
+|bcfq72Yi8Q==|4719|
+|pvIqO/hltg==|4680|
+|mGxhX5psLw==|3620|
+|jSshdhylbA==|3481|
+|JGQVZfFEWg==|1529|
+|/WHrPYA4OQ==|986|
+|+ZHW0ttO2A==|890|
+|ugbeeeUsrg==|697|
+|qDmH1Gi0Vg==|616|
+|EXOKKWCXKw==|613|
+
+### MESMA PLACA EM LOCAIS DISTANTES DA CIDADE SIMULTANEAMENTE
+
+Continuando a análise de possíveis placas clonadas com o mesmo tipo de veículo, utilizei a seguinte estratégia: selecionei as ocorrências no banco em que a mesma placa e tipo de veículo aparecessem no mesmo dia em diferentes locais. A ideia é calcular a distância entre as câmeras e a velocidade média que o carro demorou para passar pelas câmeras. Para isso ser possível, a velocidade registrada precisa ser maior que 0, e nessa análise estou pegando câmeras diferentes, com distância entre si maior que 0. Para lidar com o problema de algumas câmeras estarem fora do mapa do Rio de Janeiro, fiz um `JOIN` com a tabela `datario.dados_mestres.bairro` do DATA.RIO, a fim de exemplificar com mais correção a abordagem. Filtrei os casos de velocidade média maior que 60 km/h, já que essa não é uma abordagem conclusiva, servindo apenas como base para análises mais aprofundadas dos casos, mas ainda assim retornou um número de 2.205.076 observações. 
+
+Abaixo a query e um exemplo com os 10 primeiros casos observados.
+
+```sql
+WITH placas_por_dia AS (
+  SELECT
+    placa,
+    DATE(datahora) AS dia
+  FROM
+    `rj-cetrio.desafio.readings_2024_06`
+  WHERE velocidade > 0
+    AND camera_latitude < 0 
+    AND camera_longitude < 0 
+  GROUP BY
+    placa,
+    dia
+  HAVING
+    COUNT(*) > 1
+),
+resultados AS (
+SELECT
+  d1.placa,
+  d1.datahora as data,
+  d1.camera_numero as camera_numero1,
+  d2.camera_numero as camera_numero2,
+  d1.camera_latitude AS camera_latitude1,
+  d1.camera_longitude AS camera_longitude1,
+  d2.camera_latitude AS camera_latitude2,
+  d2.camera_longitude AS camera_longitude2,
+  ABS(TIMESTAMP_DIFF(d1.datahora, d2.datahora, MINUTE)) AS distancia_minutos,
+  (ST_DISTANCE(ST_GEOGPOINT(d1.camera_longitude, d1.camera_latitude), ST_GEOGPOINT(d2.camera_longitude, d2.camera_latitude)) / 1000) AS distancia_km,
+  (ST_DISTANCE(ST_GEOGPOINT(d1.camera_longitude, d1.camera_latitude), ST_GEOGPOINT(d2.camera_longitude, d2.camera_latitude)) / 1000) / (NULLIF(ABS(TIMESTAMP_DIFF(d1.datahora, d2.datahora, MINUTE)), 0) / 60) AS velocidade_media
+FROM
+  `rj-cetrio.desafio.readings_2024_06` d1
+JOIN
+  placas_por_dia pd ON d1.placa = pd.placa AND DATE(d1.datahora) = pd.dia
+JOIN
+  `rj-cetrio.desafio.readings_2024_06` d2 ON d1.placa = d2.placa AND DATE(d1.datahora) = DATE(d2.datahora) AND d1.datahora < d2.datahora AND d1.tipoveiculo = d2.tipoveiculo
+JOIN 
+  `datario.dados_mestres.bairro` b1 ON ST_CONTAINS(b1.geometry, ST_GEOGPOINT(d1.camera_longitude, d1.camera_latitude)) 
+JOIN 
+  `datario.dados_mestres.bairro` b2 ON ST_CONTAINS(b2.geometry, ST_GEOGPOINT(d2.camera_longitude, d2.camera_latitude)) 
+WHERE
+  d1.camera_latitude != 0 AND d1.camera_longitude != 0
+  AND d2.camera_latitude != 0 AND d2.camera_longitude != 0
+)
+SELECT *
+FROM resultados
+WHERE 
+  velocidade_media > 60 
+  AND distancia_km != 0
+  AND distancia_minutos IS NOT NULL
+ORDER BY
+  velocidade_media DESC
+```
+
+**exemplo:**
+
+| placa | data | camera_numero1 | camera_numero2 | camera_latitude1 | camera_longitude1 | camera_latitude2 | camera_longitude2 | distancia_minutos | distancia_km | velocidade_media |
+|---|---|---|---|---|---|---|---|---|---|---|
+| WQjVVy9TkrtJ+1K3f5fKKwE= | 2024-06-13 13:53:24.000000 UTC | 66bvYfcAJA== | 2DJwbm6ghA== | -22.940139 | -43.685481 | -22.925809 | -43.172941 | 1 | 52,5115235 | "3.150,69" |
+| vCYAqL7MHKxjrjWqavKbIhw= | 2024-06-12 14:23:24.000000 UTC | Ps9ry5KVSw== | voaGpVfCiA== | -22.949882 | -43.177759 | -22.919628 | -43.683724 | 1 | 51,92243506 | "3.115,35" |
+| sK427LogWT8gHNMoPHQoUjs= | 2024-06-10 17:50:44.000000 UTC | HAMCUYBT4w== | QvkfQGPeyQ== | -22.9211111 | -43.68027778 | -22.949882 | -43.177759 | 1 | 51,55949523 | "3.093,57" |
+| t8fJ6K9PAdjQ1YS+6bKUt20= | 2024-06-08 16:42:31.000000 UTC | MYlZnzdVrg== | tf9P0LRPEg== | -22.9066667 | -43.68444444 | -22.905895 | -43.182538 | 1 | 51,40859755 | "3.084,52" |
+| +R/zCi6sCYzbF781W1ZsGtA= | 2024-06-10 23:27:01.000000 UTC | M265Esl4wg== | StuSeMmCxg== | -22.9130556 | -43.18083333 | -22.9211111 | -43.68027778 | 1 | 51,16011769 | "3.069,61" |
+| lLFjIL3TClo0wdUtWANSP/k= | 2024-06-07 12:19:47.000000 UTC | ap8Y4eYLng== | WmhfH2wdwg== | -22.8997222 | -43.67972222 | -22.90138889 | -43.18055556 | 1 | 51,13039427 | "3.067,82" |
+| 7+fKBG9d4mqFHt4mCbCy0zs= | 2024-06-13 11:32:43.000000 UTC | HAMCUYBT4w== | qPSd0GUrsg== | -22.9211111 | -43.68027778 | -22.8971169 | -43.18339028 | 1 | 50,96327589 | "3.057,80" |
+| 2TeFulzA1NN4RR6v2UsYHOo= | 2024-06-09 19:16:48.000000 UTC | MYlZnzdVrg== | -22.90361111 | -43.18694444 | -22.9066667 | -43.68444444 | 1 | 50,95875193 | "3.057,53" |
+| J345KzWa/V8wAFxhNjk9ad0= | 2024-06-09 13:26:29.000000 UTC | ap8Y4eYLng== | -22.8997222 | -43.67972222 | FxezC6I3Jg== | -22.904605 | -43.183095 | 1 | 50,87223596 | "3.052,33" |
+| xl9s6QXwvNJQx72FoxGVtZ8= | 2024-06-09 12:17:54.000000 UTC | C5iRW8W9/Q== | -22.90472222 | -43.19 | NAQt6iSf4Q== | -22.9066667 | -43.68444444 | 1 | 50,64490059 | "3.038,69" |
+
+
+A tabela apresenta casos em que a mesma placa foi registrada em duas câmeras diferentes no mesmo dia, com um intervalo de tempo muito curto (1 minuto) e uma distância considerável entre as câmeras. As velocidades médias calculadas são extremamente altas, indicando uma impossibilidade física de um veículo se deslocar por aquela distância em tão pouco tempo.
+
+**Possíveis Explicações:**
+
+- **Placas clonadas:** A mesma placa pode estar sendo utilizada em dois veículos diferentes simultaneamente.
+- **Erros de geolocalização:** As coordenadas das câmeras podem estar incorretas, levando a um cálculo de distância impreciso.
+- **Erros no registro da data/hora:** Pode haver erros no registro do horário das leituras, fazendo com que leituras de dias diferentes pareçam ocorrer no mesmo dia.
+
+**Sugestão de próximos passos:**
+
+- **Investigar as placas:** Analisar as placas identificadas na tabela com mais detalhes, buscando informações em outras fontes de dados para verificar se há indícios de clonagem.
+
+- 
+- **Verificar a precisão das coordenadas das câmeras:** Confirmar se as coordenadas geográficas das câmeras estão corretas e se correspondem à sua localização real.
+- **Analisar a consistência dos registros de data/hora:** Verificar se há outros indícios de erros no registro da data e hora das leituras.
+
+Essa análise preliminar sugere fortemente a presença de placas clonadas ou erros significativos nos dados. É crucial realizar uma investigação mais aprofundada para confirmar as causas e tomar as medidas necessárias para corrigir os problemas.
